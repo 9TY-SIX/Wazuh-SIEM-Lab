@@ -380,3 +380,162 @@ After executing the simulated attack, I checked the Wazuh dashboard for alerts.
 
 This setup confirms that Wazuh can successfully monitor Apache logs and generate alerts for suspicious activity such as SQL injection. By enabling log monitoring on the Ubuntu endpoint and validating the alert response, I ensured that my Wazuh deployment is capable of detecting web application attacks.
 
+<br>
+<br>
+<br>
+<br>
+
+
+## 5. 🛡️ Real-Time Malware Detection and Active Response with Wazuh on Ubuntu
+
+In this project, I configured a Wazuh environment to detect malicious files in near real-time using File Integrity Monitoring (FIM) on an Ubuntu endpoint. When suspicious files are detected, they are analyzed using VirusTotal, and if confirmed malicious, Wazuh automatically removes them using an Active Response script. Here’s how I set it all up.
+
+---
+
+### 🔧 Ubuntu Endpoint Configuration
+
+#### ✅ Enabling File Integrity Monitoring
+
+I started by enabling FIM on the Ubuntu endpoint. I edited the Wazuh agent configuration file at `/var/ossec/etc/ossec.conf` and made sure the `<syscheck>` module was enabled:
+<br>
+# FIM 
+<img width="957" height="1018" alt="Image" src="https://github.com/user-attachments/assets/39aac80d-9107-4466-9566-c04c79a6e600" />
+picture 1
+
+```xml
+<syscheck>
+  <disabled>no</disabled>
+  <directories realtime="yes">/root</directories>
+</syscheck>
+```
+
+This setup ensures that any change in the `/root` directory is monitored in real time.
+
+#### 🧰 Installing Dependencies
+
+I installed `jq`, a tool that helps parse JSON data in the Active Response script:
+
+```bash
+sudo apt update
+sudo apt install -y jq
+```
+
+---
+
+### 🛠️ Active Response Script
+
+Next, I created a custom Active Response script to remove malicious files. I saved the script as `/var/ossec/active-response/bin/remove-threat.sh` with the following content as shown in the screenshot below:
+<br>
+# Custom Rule Configuration 
+<img width="1920" height="1020" alt="Image" src="https://github.com/user-attachments/assets/0b51c6f1-4eee-47bc-9664-a5cb0f6d8450" />
+
+
+Then I updated the script's ownership and permissions to make it executable by Wazuh:
+
+```bash
+sudo chmod 750 /var/ossec/active-response/bin/remove-threat.sh
+sudo chown root:wazuh /var/ossec/active-response/bin/remove-threat.sh
+```
+<br>
+
+# Ossec Configuration 
+<img width="957" height="1018" alt="Image" src="https://github.com/user-attachments/assets/ddae2708-0b2b-40e4-ac98-52142ff0238e" />
+
+Finally, I restarted the Wazuh agent:
+
+```bash
+sudo systemctl restart wazuh-agent
+```
+
+---
+
+### 🧠 Wazuh Server Configuration
+
+#### 🔍 Local Rules for File Monitoring
+
+On the Wazuh server, I then navigated to the wazuh dashboard, then to the rules section. There, i searched for the local_rules.xml and edited it with the following rules: rules that generate alerts when files are added or modified in the `/root` directory:
+<br>
+# Rules Configuration
+<img width="1920" height="1020" alt="Image" src="https://github.com/user-attachments/assets/ba7c5cd5-201d-4d43-8de2-713cc5e39121" />
+
+```xml
+<group name="syscheck,pci_dss_11.5,nist_800_53_SI.7,">
+  <rule id="100200" level="7">
+    <if_sid>550</if_sid>
+    <field name="file">/root</field>
+    <description>File modified in /root directory.</description>
+  </rule>
+
+  <rule id="100201" level="7">
+    <if_sid>554</if_sid>
+    <field name="file">/root</field>
+    <description>File added to /root directory.</description>
+  </rule>
+</group>
+```
+
+#### 🔗 Enabling VirusTotal Integration
+
+To analyze suspicious files, I integrated VirusTotal by editing `/var/ossec/etc/ossec.conf` on the Wazuh manager. I added the following block (replacing the placeholder with my actual API key) as shown:
+<br>
+# Virus Total API Key Configuration
+<img width="960" height="1020" alt="Image" src="https://github.com/user-attachments/assets/dd9f1dda-f323-43d6-87e5-ab6c106035bd" />
+
+
+
+#### 🚨 Setting Up Active Response
+
+To make Wazuh automatically remove malicious files flagged by VirusTotal, I added the following sections to the same config file as shown in the screenshot.
+<br>
+<img width="960" height="1020" alt="Image" src="https://github.com/user-attachments/assets/091278af-f0e8-41be-8bd7-2afdb6738cd6" />
+
+
+
+I also added rules in the local_files to log whether the file was successfully removed or not as shown:
+<br>
+<img width="1920" height="1020" alt="Image" src="https://github.com/user-attachments/assets/ba7c5cd5-201d-4d43-8de2-713cc5e39121" />
+
+
+Lastly, I restarted the Wazuh manager:
+
+```bash
+sudo systemctl restart wazuh-manager
+```
+
+---
+
+### 🧪 Attack Emulation
+
+To test the setup, I downloaded the EICAR test file, which is a harmless file designed to trigger antivirus alerts:
+
+```bash
+sudo curl -Lo /root/eicar.com https://secure.eicar.org/eicar.com
+```
+<br>
+
+# Downloading EICAR test file to trigger virus
+<img width="894" height="185" alt="Image" src="https://github.com/user-attachments/assets/b08b4222-d5bb-4e52-a1e3-7ed4d1dc90bb" />
+
+Wazuh detected the new file, triggered a rule, forwarded the alert to VirusTotal, and since it’s a known test virus, it was flagged and automatically removed by my script. As shown in the picture:
+<br>
+# Wazuh Dashboard Alerts
+<img width="1920" height="1020" alt="Image" src="https://github.com/user-attachments/assets/dc618cf0-2d6c-45c8-afb8-77fb4adf8f49" />
+
+
+---
+
+### 📊 Visualizing Alerts
+
+In the Wazuh dashboard, I opened the **Threat Hunting** module and used the appropriate filters to confirm the alerts. I could see:
+
+- File creation detected by FIM
+- VirusTotal scan results
+- Active response result (file removed)
+
+---
+
+### ✅ Summary
+
+This setup demonstrates how I integrated real-time file monitoring, threat intelligence via VirusTotal, and automated response using Wazuh. It showcases the power of endpoint protection using open-source tools and how to automate incident response workflows.
+
+--- 
